@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aioharmanluxury"
+description = "Async client for Harman Luxury Audio / StreamUnlimited network streamers (Arcam Radia, JBL, Mark Levinson)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Steven Beshensky" }]
+keywords = [
+  "arcam",
+  "harman",
+  "jbl",
+  "streamunlimited",
+  "streamsdk",
+  "media",
+  "asyncio",
+  "homeassistant",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Home Automation",
+  "Framework :: AsyncIO",
+]
+dynamic = ["version"]
+dependencies = ["aiohttp>=3.9"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://github.com/sbesh91/aioharmanluxury"
+Issues = "https://github.com/sbesh91/aioharmanluxury/issues"
+
+[tool.hatch.version]
+path = "src/aioharmanluxury/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aioharmanluxury"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
