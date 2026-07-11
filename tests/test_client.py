@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientTimeout
 
 from aioharmanluxury import HarmanLuxuryClient, HarmanLuxuryConnectionError
 
@@ -87,13 +87,28 @@ class _FakeSession:
         self._get_exc = get_exc
         self._post_exc = post_exc
         self.posts: list[dict[str, Any]] = []
+        self.timeouts: list[ClientTimeout | None] = []
 
-    def get(self, url: str, params: dict[str, str], ssl: bool) -> _FakeResponse:
+    def get(
+        self,
+        url: str,
+        params: dict[str, str],
+        ssl: bool,
+        timeout: ClientTimeout | None = None,
+    ) -> _FakeResponse:
+        self.timeouts.append(timeout)
         if self._get_exc is not None:
             return _FakeResponse(exc=self._get_exc)
         return _FakeResponse(payload=self._get_responses[params["path"]])
 
-    def post(self, url: str, json: dict[str, Any], ssl: bool) -> _FakeResponse:
+    def post(
+        self,
+        url: str,
+        json: dict[str, Any],
+        ssl: bool,
+        timeout: ClientTimeout | None = None,
+    ) -> _FakeResponse:
+        self.timeouts.append(timeout)
         self.posts.append(json)
         return _FakeResponse(payload=True, exc=self._post_exc)
 
@@ -147,7 +162,7 @@ async def test_get_state_stopped() -> None:
     responses["player:player/data/value"] = [
         {"playLogicData": {"state": "stopped"}, "type": "playLogicData"}
     ]
-    responses["player:player/data/playTime"] = [{"type": "i64_", "i64_": 0}]
+    responses["player:player/data/playTime"] = [{"type": "i64_"}]
     state = await _client(_FakeSession(responses)).async_get_state()
     assert state.play_state == "stopped"
     assert state.title is None
@@ -156,6 +171,32 @@ async def test_get_state_stopped() -> None:
     assert state.can_play is False
     assert state.can_pause is False
     assert state.can_stop is False
+
+
+async def test_get_state_position_zero() -> None:
+    """Test a zero playback position is preserved rather than dropped."""
+    responses = dict(GETDATA_RESPONSES)
+    responses["player:player/data/playTime"] = [{"type": "i64_", "i64_": 0}]
+    state = await _client(_FakeSession(responses)).async_get_state()
+    assert state.position == 0
+
+
+async def test_get_state_position_missing() -> None:
+    """Test an absent playback position reports None."""
+    responses = dict(GETDATA_RESPONSES)
+    responses["player:player/data/playTime"] = [{"type": "i64_"}]
+    state = await _client(_FakeSession(responses)).async_get_state()
+    assert state.position is None
+
+
+async def test_requests_apply_timeout() -> None:
+    """Test every request carries the short per-request timeout."""
+    session = _FakeSession(GETDATA_RESPONSES)
+    client = _client(session)
+    await client.async_get_state()
+    await client.async_set_volume(40)
+    assert session.timeouts
+    assert all(t == ClientTimeout(total=10) for t in session.timeouts)
 
 
 @pytest.mark.parametrize(

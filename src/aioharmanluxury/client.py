@@ -12,11 +12,15 @@ verification is disabled on every request.
 
 from typing import Any
 
-from aiohttp import ClientError, ClientSession
+from aiohttp import ClientError, ClientSession, ClientTimeout
 
 from . import const
 from .exceptions import HarmanLuxuryConnectionError
 from .models import DeviceInfo, HarmanLuxuryState
+
+# The device is on the local network and answers promptly; cap every request
+# so an unresponsive device cannot stall setup or polling for minutes.
+_REQUEST_TIMEOUT = ClientTimeout(total=10)
 
 
 class HarmanLuxuryClient:
@@ -34,6 +38,7 @@ class HarmanLuxuryClient:
                 f"{self._base}/getData",
                 params={"path": path, "roles": "value", "_nocache": "1"},
                 ssl=False,
+                timeout=_REQUEST_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
@@ -50,6 +55,7 @@ class HarmanLuxuryClient:
                 f"{self._base}/setData",
                 json={"path": path, "role": role, "value": value},
                 ssl=False,
+                timeout=_REQUEST_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
         except (ClientError, TimeoutError) as err:
@@ -93,7 +99,7 @@ class HarmanLuxuryClient:
         duration_ms = active.get("duration") or (play.get("status", {}) or {}).get(
             "duration"
         )
-        position_ms = self._scalar(await self._get(const.PLAY_TIME), "i64_", 0)
+        position_ms = self._scalar(await self._get(const.PLAY_TIME), "i64_")
 
         return HarmanLuxuryState(
             online=target == const.POWER_ONLINE,
@@ -105,7 +111,7 @@ class HarmanLuxuryClient:
             album=meta.get("album"),
             art_url=track.get("icon"),
             duration=duration_ms / 1000 if duration_ms else None,
-            position=position_ms / 1000 if position_ms else None,
+            position=position_ms / 1000 if position_ms is not None else None,
             can_play=bool(controls.get("play")),
             can_pause=bool(controls.get("pause")),
             can_stop=bool(controls.get("stop")),
