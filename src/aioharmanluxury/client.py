@@ -10,6 +10,7 @@ It is served over HTTPS with a device self-signed certificate, so TLS
 verification is disabled on every request.
 """
 
+import asyncio
 from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -30,16 +31,22 @@ class HarmanLuxuryClient:
         """Initialize the client for ``host`` using the shared ``session``."""
         self._base = f"https://{host}/api"
         self._session = session
+        # The device serializes control on a single session; ensure at most one
+        # request is in flight at a time regardless of how callers interleave.
+        self._lock = asyncio.Lock()
 
     async def _get(self, path: str) -> Any:
         """Return the raw value object for ``path`` (roles=value)."""
         try:
-            async with self._session.get(
-                f"{self._base}/getData",
-                params={"path": path, "roles": "value", "_nocache": "1"},
-                ssl=False,
-                timeout=_REQUEST_TIMEOUT,
-            ) as resp:
+            async with (
+                self._lock,
+                self._session.get(
+                    f"{self._base}/getData",
+                    params={"path": path, "roles": "value", "_nocache": "1"},
+                    ssl=False,
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp,
+            ):
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         except (ClientError, TimeoutError) as err:
@@ -51,12 +58,15 @@ class HarmanLuxuryClient:
     async def _post(self, path: str, role: str, value: Any) -> None:
         """Write ``value`` to ``path`` under ``role``."""
         try:
-            async with self._session.post(
-                f"{self._base}/setData",
-                json={"path": path, "role": role, "value": value},
-                ssl=False,
-                timeout=_REQUEST_TIMEOUT,
-            ) as resp:
+            async with (
+                self._lock,
+                self._session.post(
+                    f"{self._base}/setData",
+                    json={"path": path, "role": role, "value": value},
+                    ssl=False,
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp,
+            ):
                 resp.raise_for_status()
         except (ClientError, TimeoutError) as err:
             raise HarmanLuxuryConnectionError(f"Error writing {path}: {err}") from err

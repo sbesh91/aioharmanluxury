@@ -1,5 +1,6 @@
 """Tests for the Harman Luxury client."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -55,16 +56,31 @@ GETDATA_RESPONSES: dict[str, Any] = {
 class _FakeResponse:
     """Minimal aiohttp response stand-in usable as an async context manager."""
 
-    def __init__(self, payload: Any = None, exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        payload: Any = None,
+        exc: Exception | None = None,
+        session: "_FakeSession | None" = None,
+    ) -> None:
         self._payload = payload
         self._exc = exc
+        self._session = session
 
     async def __aenter__(self) -> "_FakeResponse":
         if self._exc is not None:
             raise self._exc
+        if self._session is not None:
+            self._session.active += 1
+            self._session.max_concurrent = max(
+                self._session.max_concurrent, self._session.active
+            )
+            # Yield so overlapping requests would be observable without the lock.
+            await asyncio.sleep(0)
         return self
 
     async def __aexit__(self, *args: object) -> bool:
+        if self._session is not None:
+            self._session.active -= 1
         return False
 
     def raise_for_status(self) -> None:
@@ -88,6 +104,8 @@ class _FakeSession:
         self._post_exc = post_exc
         self.posts: list[dict[str, Any]] = []
         self.timeouts: list[ClientTimeout | None] = []
+        self.active = 0
+        self.max_concurrent = 0
 
     def get(
         self,
@@ -99,7 +117,7 @@ class _FakeSession:
         self.timeouts.append(timeout)
         if self._get_exc is not None:
             return _FakeResponse(exc=self._get_exc)
-        return _FakeResponse(payload=self._get_responses[params["path"]])
+        return _FakeResponse(payload=self._get_responses[params["path"]], session=self)
 
     def post(
         self,
@@ -110,7 +128,7 @@ class _FakeSession:
     ) -> _FakeResponse:
         self.timeouts.append(timeout)
         self.posts.append(json)
-        return _FakeResponse(payload=True, exc=self._post_exc)
+        return _FakeResponse(payload=True, exc=self._post_exc, session=self)
 
 
 def _client(session: _FakeSession) -> HarmanLuxuryClient:
@@ -197,6 +215,18 @@ async def test_requests_apply_timeout() -> None:
     await client.async_set_volume(40)
     assert session.timeouts
     assert all(t == ClientTimeout(total=10) for t in session.timeouts)
+
+
+async def test_requests_are_serialized() -> None:
+    """Test the client never has two device requests in flight at once."""
+    session = _FakeSession(GETDATA_RESPONSES)
+    client = _client(session)
+    await asyncio.gather(
+        client.async_get_state(),
+        client.async_get_state(),
+        client.async_set_volume(40),
+    )
+    assert session.max_concurrent == 1
 
 
 @pytest.mark.parametrize(
