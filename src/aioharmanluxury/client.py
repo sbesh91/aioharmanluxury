@@ -106,7 +106,9 @@ class HarmanLuxuryClient:
             art_url=track.get("icon"),
             duration=duration_ms / 1000 if duration_ms else None,
             position=position_ms / 1000 if position_ms else None,
+            can_play=bool(controls.get("play")),
             can_pause=bool(controls.get("pause")),
+            can_stop=bool(controls.get("stop")),
             can_next=bool(controls.get("next_")),
             can_previous=bool(controls.get("previous")),
         )

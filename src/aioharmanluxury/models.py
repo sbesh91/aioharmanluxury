@@ -27,6 +27,8 @@ class HarmanLuxuryState:
     art_url: str | None = None
     duration: float | None = None  # seconds
     position: float | None = None  # seconds
+    can_play: bool = False
     can_pause: bool = False
+    can_stop: bool = False
     can_next: bool = False
     can_previous: bool = False

@@ -37,7 +37,13 @@ GETDATA_RESPONSES: dict[str, Any] = {
                         "activeResource": {"duration": 228000},
                     },
                 },
-                "controls": {"pause": True, "next_": True, "previous": True},
+                "controls": {
+                    "play": True,
+                    "pause": True,
+                    "stop": True,
+                    "next_": True,
+                    "previous": True,
+                },
                 "status": {"duration": 228000},
             },
             "type": "playLogicData",
@@ -82,9 +88,7 @@ class _FakeSession:
         self._post_exc = post_exc
         self.posts: list[dict[str, Any]] = []
 
-    def get(
-        self, url: str, params: dict[str, str], ssl: bool
-    ) -> _FakeResponse:
+    def get(self, url: str, params: dict[str, str], ssl: bool) -> _FakeResponse:
         if self._get_exc is not None:
             return _FakeResponse(exc=self._get_exc)
         return _FakeResponse(payload=self._get_responses[params["path"]])
@@ -120,7 +124,9 @@ async def test_async_get_state() -> None:
     assert state.art_url == "http://1.2.3.4/art.jpg"
     assert state.duration == 228
     assert state.position == 42
+    assert state.can_play is True
     assert state.can_pause is True
+    assert state.can_stop is True
     assert state.can_next is True
     assert state.can_previous is True
 
@@ -147,7 +153,9 @@ async def test_get_state_stopped() -> None:
     assert state.title is None
     assert state.duration is None
     assert state.position is None
+    assert state.can_play is False
     assert state.can_pause is False
+    assert state.can_stop is False
 
 
 @pytest.mark.parametrize(
